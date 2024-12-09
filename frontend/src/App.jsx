@@ -1,24 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight, Copy, Check } from 'lucide-react';
-import Prism from 'prismjs';
-import "prismjs/themes/prism-tomorrow.css";
-import "prismjs/components/prism-python";
-import "prismjs/components/prism-javascript";
-import "prismjs/components/prism-jsx";
-import "prismjs/components/prism-typescript";
-import "prismjs/components/prism-bash";
-import "prismjs/components/prism-json";
-import "prismjs/components/prism-sql";
-import "prismjs/components/prism-css";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/atom-one-dark.css';
+
 
 const DEFAULT_MODEL = 'gpt-4o';
 const API_BASE_URL = 'http://localhost:5001';
 
 const CodeBlock = ({ code, language }) => {
   const [isCopied, setIsCopied] = useState(false);
+  const codeRef = useRef(null);
 
   useEffect(() => {
-    Prism.highlightAll();
+    if (codeRef.current) {
+      hljs.highlightElement(codeRef.current);
+    }
   }, [code]);
 
   const copyToClipboard = async () => {
@@ -41,7 +39,7 @@ const CodeBlock = ({ code, language }) => {
         {isCopied ? <Check size={16} /> : <Copy size={16} />}
       </button>
       <pre className="!bg-slate-900 !p-4 rounded-lg">
-        <code className={`language-${language || 'plaintext'}`}>
+        <code ref={codeRef} className={language ? `language-${language}` : ''}>
           {code}
         </code>
       </pre>
@@ -50,48 +48,47 @@ const CodeBlock = ({ code, language }) => {
 };
 
 const MessageContent = ({ content }) => {
-  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-
-  while ((match = codeBlockRegex.exec(content)) !== null) {
-    // Add text before code block
-    if (match.index > lastIndex) {
-      parts.push({
-        type: 'text',
-        content: content.slice(lastIndex, match.index)
-      });
-    }
-
-    // Add code block
-    parts.push({
-      type: 'code',
-      language: match[1] || 'plaintext',
-      content: match[2].trim()
-    });
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  // Add remaining text
-  if (lastIndex < content.length) {
-    parts.push({
-      type: 'text',
-      content: content.slice(lastIndex)
-    });
-  }
-
   return (
-    <div className="space-y-2">
-      {parts.map((part, index) => (
-        part.type === 'code' ? (
-          <CodeBlock key={index} code={part.content} language={part.language} />
-        ) : (
-          <div key={index} className="whitespace-pre-wrap">{part.content}</div>
-        )
-      ))}
-    </div>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        code: ({node, inline, className, children, ...props}) => {
+          const match = /language-(\w+)/.exec(className || '');
+          const language = match ? match[1] : '';
+
+          if (inline) {
+            return (
+              <code className="bg-slate-800 px-1 rounded text-sm" {...props}>
+                {children}
+              </code>
+            );
+          }
+
+          return (
+            <CodeBlock
+              code={String(children).replace(/\n$/, '')}
+              language={language}
+            />
+          );
+        },
+        p: ({children}) => <p className="mb-4">{children}</p>,
+        ul: ({children}) => <ul className="list-disc list-inside mb-4">{children}</ul>,
+        ol: ({children}) => <ol className="list-decimal list-inside mb-4">{children}</ol>,
+        li: ({children}) => <li className="ml-4">{children}</li>,
+        a: ({children, href}) => (
+          <a href={href} className="text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer">
+            {children}
+          </a>
+        ),
+        blockquote: ({children}) => (
+          <blockquote className="border-l-4 border-slate-500 pl-4 my-4 italic">
+            {children}
+          </blockquote>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   );
 };
 
