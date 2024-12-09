@@ -11,7 +11,7 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-echo -e "${GREEN}Starting chatbot setup...${NC}"
+echo -e "${GREEN}Starting chatbot environment setup...${NC}"
 
 # Check for Python
 if ! command_exists python3; then
@@ -36,46 +36,53 @@ if ! command_exists npm; then
     exit 1
 fi
 
-# Create project directories
-echo -e "${YELLOW}Creating project directories...${NC}"
-mkdir -p backend frontend
-
 # Setup Python virtual environment
 echo -e "${YELLOW}Setting up Python virtual environment...${NC}"
 cd backend
-python3 -m venv venv
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+
 source venv/bin/activate
 
 # Install Python dependencies
 echo -e "${YELLOW}Installing Python dependencies...${NC}"
-pip install flask flask-cors
+if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt
+else
+    echo -e "${RED}requirements.txt not found in backend directory${NC}"
+    exit 1
+fi
 
-# Create requirements.txt
-echo "flask
-flask-cors" > requirements.txt
-
-# Create .env file for backend
-echo "FLASK_APP=app.py
+# Create backend .env if it doesn't exist
+if [ ! -f ".env" ]; then
+    echo -e "${YELLOW}Creating backend .env file...${NC}"
+    echo "FLASK_APP=app.py
 FLASK_ENV=development
-PORT=5001" > .env
+PORT=5001
+OPENAI_API_KEY=" > .env
+    echo -e "${RED}Please add your OpenAI API key to backend/.env${NC}"
+fi
 
 # Setup frontend
 cd ../frontend
-echo -e "${YELLOW}Setting up React frontend...${NC}"
-npm create vite@latest . -- --template react
-npm install
 
-# Install additional frontend dependencies
-echo -e "${YELLOW}Installing additional frontend dependencies...${NC}"
-npm install lucide-react @tailwindcss/forms tailwindcss postcss autoprefixer
+# Install frontend dependencies
+echo -e "${YELLOW}Installing frontend dependencies...${NC}"
+if [ -f "package.json" ]; then
+    npm install
+else
+    echo -e "${RED}package.json not found in frontend directory${NC}"
+    exit 1
+fi
 
-# Initialize Tailwind CSS
-npx tailwindcss init -p
+# Create frontend .env if it doesn't exist
+if [ ! -f ".env" ]; then
+    echo -e "${YELLOW}Creating frontend .env file...${NC}"
+    echo "VITE_API_URL=http://localhost:5001" > .env
+fi
 
-# Create .env file for frontend
-echo "VITE_API_URL=http://localhost:5001" > .env
-
-# Create a start script
+# Create or update start script in root directory
 cd ..
 echo -e "${YELLOW}Creating start script...${NC}"
 cat > start.sh << 'EOL'
@@ -107,44 +114,8 @@ EOL
 
 chmod +x start.sh
 
-echo -e "${GREEN}Setup complete! To start the application:${NC}"
-echo -e "1. cd chatbot"
-echo -e "2. ./start.sh"
-echo -e "\n${YELLOW}Note: Make sure to copy your backend (app.py) and frontend (App.jsx) files into their respective directories.${NC}"
-
-# Create README
-cat > README.md << 'EOL'
-# Custom Chatbot
-
-## Setup
-1. Ensure you have Python 3.x and Node.js installed
-2. Run the setup script: `./setup.sh`
-
-## Development
-- Backend code goes in `backend/app.py`
-- Frontend code goes in `frontend/src/App.jsx`
-
-## Running the Application
-1. Navigate to the project directory: `cd chatbot`
-2. Run the start script: `./start.sh`
-
-## Environment Variables
-### Backend (.env)
-- FLASK_APP=app.py
-- FLASK_ENV=development
-- PORT=5000
-
-### Frontend (.env)
-- VITE_API_URL=http://localhost:5000
-
-## Dependencies
-### Backend
-- Flask
-- Flask-CORS
-
-### Frontend
-- React
-- Vite
-- Lucide React
-- Tailwind CSS
-EOL
+echo -e "${GREEN}Setup complete!${NC}"
+echo -e "\n${YELLOW}Important:${NC}"
+echo -e "1. Make sure to add your OpenAI API key to backend/.env"
+echo -e "2. To start the application, run: ${GREEN}./start.sh${NC}"
+echo -e "3. Access the application at: ${GREEN}http://localhost:5173${NC}"
