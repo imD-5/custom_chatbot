@@ -1,8 +1,99 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight, Copy, Check } from 'lucide-react';
+import Prism from 'prismjs';
+import "prismjs/themes/prism-tomorrow.css";
+import "prismjs/components/prism-python";
+import "prismjs/components/prism-javascript";
+import "prismjs/components/prism-jsx";
+import "prismjs/components/prism-typescript";
+import "prismjs/components/prism-bash";
+import "prismjs/components/prism-json";
+import "prismjs/components/prism-sql";
+import "prismjs/components/prism-css";
 
 const DEFAULT_MODEL = 'gpt-4o';
 const API_BASE_URL = 'http://localhost:5001';
+
+const CodeBlock = ({ code, language }) => {
+  const [isCopied, setIsCopied] = useState(false);
+
+  useEffect(() => {
+    Prism.highlightAll();
+  }, [code]);
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy code:', err);
+    }
+  };
+
+  return (
+    <div className="relative group">
+      <button
+        onClick={copyToClipboard}
+        className="absolute right-2 top-2 p-1 rounded bg-slate-700 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Copy code"
+      >
+        {isCopied ? <Check size={16} /> : <Copy size={16} />}
+      </button>
+      <pre className="!bg-slate-900 !p-4 rounded-lg">
+        <code className={`language-${language || 'plaintext'}`}>
+          {code}
+        </code>
+      </pre>
+    </div>
+  );
+};
+
+const MessageContent = ({ content }) => {
+  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    // Add text before code block
+    if (match.index > lastIndex) {
+      parts.push({
+        type: 'text',
+        content: content.slice(lastIndex, match.index)
+      });
+    }
+
+    // Add code block
+    parts.push({
+      type: 'code',
+      language: match[1] || 'plaintext',
+      content: match[2].trim()
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < content.length) {
+    parts.push({
+      type: 'text',
+      content: content.slice(lastIndex)
+    });
+  }
+
+  return (
+    <div className="space-y-2">
+      {parts.map((part, index) => (
+        part.type === 'code' ? (
+          <CodeBlock key={index} code={part.content} language={part.language} />
+        ) : (
+          <div key={index} className="whitespace-pre-wrap">{part.content}</div>
+        )
+      ))}
+    </div>
+  );
+};
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState([]);
@@ -15,7 +106,7 @@ const ChatInterface = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const messagesEndRef = useRef(null);
 
-  // Rest of the existing fetch and handle functions remain the same
+  // Existing fetch and handle functions remain the same
   const fetchWithTimeout = async (url, options = {}, timeout = 25000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
@@ -57,6 +148,10 @@ const ChatInterface = () => {
     fetchModels();
   }, []);
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
@@ -97,14 +192,11 @@ const ChatInterface = () => {
         ${isSidebarOpen ? 'w-64' : 'w-0'}`}>
         {isSidebarOpen && (
           <>
-            {/* Sidebar Header */}
             <div className="p-4 border-b border-slate-700">
               <h2 className="text-lg font-medium text-white">Menu</h2>
             </div>
 
-            {/* Sidebar Content */}
             <div className="flex-1 p-4 space-y-4">
-              {/* Settings Section */}
               <div>
                 <div className="flex items-center space-x-2 text-slate-200 mb-2">
                   <Settings size={20} />
@@ -131,7 +223,6 @@ const ChatInterface = () => {
                 </div>
               </div>
 
-              {/* Chat History Section */}
               <div>
                 <div className="flex items-center space-x-2 text-slate-200 mb-2">
                   <MessageSquare size={20} />
@@ -146,7 +237,6 @@ const ChatInterface = () => {
         )}
       </div>
 
-      {/* Toggle Sidebar Button */}
       <button
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
         className="absolute left-0 top-1/2 transform -translate-y-1/2 bg-slate-700 p-2 rounded-r-md text-white hover:bg-slate-600 transition-colors"
@@ -154,21 +244,17 @@ const ChatInterface = () => {
         {isSidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
       </button>
 
-      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full">
-        {/* Header */}
         <div className="p-4 bg-slate-800 border-b border-slate-700">
           <h1 className="text-xl font-bold text-white">Custom Chatbot</h1>
         </div>
 
-        {/* Error Display */}
         {error && (
           <div className="p-3 bg-red-900/50 text-red-200 text-sm">
             {error}
           </div>
         )}
 
-        {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message, index) => (
             <div
@@ -176,7 +262,7 @@ const ChatInterface = () => {
               className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[70%] rounded-lg p-3 ${
+                className={`max-w-[80%] rounded-lg p-3 ${
                   message.type === 'user'
                     ? 'bg-blue-600 text-white'
                     : message.isError
@@ -184,7 +270,7 @@ const ChatInterface = () => {
                     : 'bg-slate-700 text-slate-100'
                 }`}
               >
-                {message.content}
+                <MessageContent content={message.content} />
               </div>
             </div>
           ))}
@@ -199,7 +285,6 @@ const ChatInterface = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
         <div className="p-4 border-t border-slate-700">
           <form onSubmit={handleSubmit} className="flex space-x-2">
             <input
