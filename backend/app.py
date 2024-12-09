@@ -32,7 +32,7 @@ app = Flask(__name__)
 # Simplified CORS configuration
 CORS(app, resources={
     r"/*": {
-        "origins": "http://localhost:5173",  # String instead of list
+        "origins": "http://localhost:5173",
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type"]
     }
@@ -52,7 +52,7 @@ class CustomChatbot:
         logger.info(f"Returning models: {self.available_models}")
         return self.available_models
 
-    def generate_response(self, message, model="gpt-3.5-turbo"):
+    def generate_response(self, message, model="gpt-4o"):
         try:
             logger.info(f"Generating response using model: {model}")
             messages = [{"role": "system", "content": "You are a helpful assistant."}]
