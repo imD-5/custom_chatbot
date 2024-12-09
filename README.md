@@ -1,4 +1,5 @@
 # Custom Chatbot
+***Since API usage is usually cheaper than monthly subscription, why not make it mysef????***
 
 ## Setup
 1. Ensure you have Python 3.x and Node.js installed
@@ -16,7 +17,8 @@
 ### Backend (.env)
 - FLASK_APP=app.py
 - FLASK_ENV=development
-- PORT=5000
+- PORT=5001
+- OPENAI_API_KEY="your-key"
 
 ### Frontend (.env)
 - VITE_API_URL=http://localhost:5000
