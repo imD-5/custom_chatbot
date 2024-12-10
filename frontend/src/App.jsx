@@ -1,16 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight, Copy, Check, Plus, Trash2 } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './components/ui/alert-dialog';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/atom-one-dark.css';
+import { debounce } from 'lodash';
 
 
 const DEFAULT_MODEL = 'gpt-4o';
 const API_BASE_URL = 'http://localhost:5001';
 
-const CodeBlock = ({ code, language }) => {
+const CodeBlock = React.memo(({ code, language }) => {
   const [isCopied, setIsCopied] = useState(false);
   const codeRef = useRef(null);
 
@@ -46,9 +47,9 @@ const CodeBlock = ({ code, language }) => {
       </pre>
     </div>
   );
-};
+});
 
-const MessageContent = ({ content }) => {
+const MessageContent = React.memo(({ content }) => {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -91,6 +92,30 @@ const MessageContent = ({ content }) => {
       {content}
     </ReactMarkdown>
   );
+});
+
+const EditableMessage = ({ initialContent, onSave, onCancel }) => {
+  const [editedContent, setEditedContent] = useState(initialContent);
+
+  const handleSave = () => {
+    onSave(editedContent);
+  };
+
+  return (
+    <div>
+      <textarea
+        value={editedContent}
+        onChange={(e) => setEditedContent(e.target.value)}
+        className="w-full p-2 bg-slate-700 border border-slate-600 rounded-md text-white"
+      />
+      <button onClick={handleSave} className="p-2 bg-blue-600 text-white rounded-md">
+        Save
+      </button>
+      <button onClick={onCancel} className="p-2 ml-2 bg-gray-600 text-white rounded-md">
+        Cancel
+      </button>
+    </div>
+  );
 };
 
 const ChatInterface = () => {
@@ -109,6 +134,7 @@ const ChatInterface = () => {
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [selectedConversations, setSelectedConversations] = useState(new Set());
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -190,23 +216,19 @@ const ChatInterface = () => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
+    // Debounce the height adjustment
     const adjustHeight = () => {
-      textarea.style.height = 'auto';
-
-      const chatSection = textarea.closest('.flex-1.flex.flex-col.h-full');
-      const maxHeight = chatSection ? chatSection.offsetHeight * 0.4 : 300;
-
-      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-      textarea.style.height = `${newHeight}px`;
+      requestAnimationFrame(() => {
+        textarea.style.height = 'auto';
+        const maxHeight = Math.min(textarea.scrollHeight, 300);
+        textarea.style.height = `${maxHeight}px`;
+      });
     };
-
-    adjustHeight();
 
     const handleInput = () => adjustHeight();
     textarea.addEventListener('input', handleInput);
-
     return () => textarea.removeEventListener('input', handleInput);
-  }, [inputValue]);
+  }, []);
 
   // Create new conversation
   const createNewConversation = async () => {
@@ -324,7 +346,6 @@ const ChatInterface = () => {
     }
   };
 
-
   // Format date for display
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -333,6 +354,11 @@ const ChatInterface = () => {
       year: 'numeric'
     });
   };
+
+  const debouncedSetInputValue = useCallback(
+    debounce((value) => setInputValue(value), 100),
+    []
+  );
 
   const handleConversationSelect = (conversationId) => {
     const newSelected = new Set(selectedConversations);
@@ -387,6 +413,41 @@ const ChatInterface = () => {
       setError(`Failed to delete conversations: ${error.message}`);
     }
     setShowDeleteDialog(false);
+  };
+
+  const handleEditClick = (index) => {
+    setEditingIndex(index);
+  };
+
+  const handleEditCancel = () => {
+    setEditingIndex(null);
+  };
+
+  const handleEditSave = async (index, newContent) => {
+    const message = messages[index];
+    const isUserMessage = message.type === 'user';
+
+    try {
+      await fetchWithTimeout(`${API_BASE_URL}/conversations/${currentConversationId}/messages/${Math.floor(index / 2)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_message: isUserMessage ? newContent : message.content,
+          bot_response: isUserMessage ? messages[index + 1]?.content : newContent,
+        }),
+      });
+
+      // Update local state to reflect the change
+      setMessages((prevMessages) =>
+        prevMessages.map((msg, msgIndex) =>
+          msgIndex === index ? { ...msg, content: newContent } : msg
+        )
+      );
+      setEditingIndex(null);
+    } catch (error) {
+      console.error('Error editing message:', error);
+      setError(`Failed to edit message: ${error.message}`);
+    }
   };
 
   return (
@@ -548,27 +609,33 @@ const ChatInterface = () => {
               key={index}
               className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div
-                className={`max-w-[80%] rounded-lg p-3 ${
-                  message.type === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : message.isError
-                    ? 'bg-red-900/50 text-red-200'
-                    : 'bg-slate-700 text-slate-100'
-                }`}
-              >
-                <MessageContent content={message.content} />
-              </div>
+              {editingIndex === index ? (
+                <EditableMessage
+                  initialContent={message.content}
+                  onSave={(newContent) => handleEditSave(index, newContent)}
+                  onCancel={handleEditCancel}
+                />
+              ) : (
+                <div
+                  className={`max-w-[80%] rounded-lg p-3 ${
+                    message.type === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : message.isError
+                      ? 'bg-red-900/50 text-red-200'
+                      : 'bg-slate-700 text-slate-100'
+                  }`}
+                >
+                  <MessageContent content={message.content} />
+                  <button
+                    onClick={() => handleEditClick(index)}
+                    className="bg-gray-500 text-white p-1 ml-2 rounded-md text-xs"
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
             </div>
           ))}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-700 rounded-lg p-3 text-slate-100 flex items-center space-x-2">
-                <Loader2 className="animate-spin h-4 w-4" />
-                <span>Thinking...</span>
-              </div>
-            </div>
-          )}
           <div ref={messagesEndRef} />
         </div>
 
@@ -577,7 +644,10 @@ const ChatInterface = () => {
             <textarea
               ref={textareaRef}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value); // Update immediately for display
+                debouncedSetInputValue(e.target.value); // Debounce for processing
+              }}
               onKeyDown={handleKeyPress}
               placeholder="Type your message... (⌘+Enter to send)"
               className="flex-1 p-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto"

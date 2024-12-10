@@ -13,6 +13,8 @@
     "@radix-ui/react-alert-dialog": "^1.1.2",
     "@tailwindcss/forms": "^0.5.9",
     "highlight.js": "^11.10.0",
+    "lodash": "^4.17.21",
+    "lodash.debounce": "^4.0.8",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
