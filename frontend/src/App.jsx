@@ -636,6 +636,14 @@ const ChatInterface = () => {
               )}
             </div>
           ))}
+
+          {isLoading && (
+            <div className="flex justify-start max-w-[80%]">
+              <div className="bg-slate-700 text-slate-100 rounded-lg p-3">
+                <MessageContent content="Thinking..." />
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
