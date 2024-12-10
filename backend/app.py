@@ -31,11 +31,10 @@ logger.info("OpenAI client initialized successfully")
 
 app = Flask(__name__)
 
-# Simplified CORS configuration
 CORS(app, resources={
     r"/*": {
         "origins": "http://localhost:5173",
-        "methods": ["GET", "POST", "OPTIONS"],
+        "methods": ["GET", "POST", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type"]
     }
 })
@@ -130,38 +129,38 @@ Generate only the title without any additional text or punctuation."""
         with open(self.data_dir / f"{conversation_id}.json", 'w') as f:
             json.dump(data, f, indent=2)
 
-def delete_conversations(self, conversation_ids):
-    """Delete multiple conversations by their IDs
-    
-    Args:
-        conversation_ids (list): List of conversation IDs to delete
+    def delete_conversations(self, conversation_ids):
+        """Delete multiple conversations by their IDs
         
-    Returns:
-        dict: Dictionary with results for each conversation deletion attempt
-        
-    Raises:
-        ValueError: If conversation_ids is not a list
-    """
-    if not isinstance(conversation_ids, list):
-        raise ValueError("conversation_ids must be a list")
+        Args:
+            conversation_ids (list): List of conversation IDs to delete
+            
+        Returns:
+            dict: Dictionary with results for each conversation deletion attempt
+            
+        Raises:
+            ValueError: If conversation_ids is not a list
+        """
+        if not isinstance(conversation_ids, list):
+            raise ValueError("conversation_ids must be a list")
 
-    results = {}
+        results = {}
 
-    for conversation_id in conversation_ids:
-        try:
-            conversation_file = self.data_dir / f"{conversation_id}.json"
-            if not conversation_file.exists():
-                results[conversation_id] = f"Error: Conversation not found"
-                continue
+        for conversation_id in conversation_ids:
+            try:
+                conversation_file = self.data_dir / f"{conversation_id}.json"
+                if not conversation_file.exists():
+                    results[conversation_id] = f"Error: Conversation not found"
+                    continue
 
-            conversation_file.unlink()
-            results[conversation_id] = "Successfully deleted"
+                conversation_file.unlink()
+                results[conversation_id] = "Successfully deleted"
 
-        except Exception as e:
-            logger.error(f"Error deleting conversation {conversation_id}: {str(e)}")
-            results[conversation_id] = f"Error: {str(e)}"
+            except Exception as e:
+                logger.error(f"Error deleting conversation {conversation_id}: {str(e)}")
+                results[conversation_id] = f"Error: {str(e)}"
 
-    return results
+        return results
 
 class CustomChatbot:
     def __init__(self):
@@ -244,25 +243,22 @@ def get_conversation(conversation_id):
         logger.error(f"Error getting conversation: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/conversations', methods=['DELETE'])
-def delete_conversations():
-    """Delete multiple conversations"""
+@app.route('/conversations/<conversation_id>', methods=['DELETE', 'OPTIONS'])
+def delete_conversation(conversation_id):
+    """Delete a single conversation"""
     try:
-        conversation_ids = request.json.get('conversation_ids', [])
-        if not conversation_ids:
-            return jsonify({'error': 'No conversation IDs provided'}), 400
+        if request.method == 'OPTIONS':
+            return make_response('', 204)
 
-        results = chatbot.delete_conversations(conversation_ids)
+        results = chatbot.conversation_manager.delete_conversations([conversation_id])
 
-        # Check if any deletions failed
-        errors = {id: msg for id, msg in results.items() if msg.startswith("Error")}
-        if errors:
-            return jsonify({'errors': errors}), 207  # 207 Multi-Status
+        if results[conversation_id].startswith("Error"):
+            return jsonify({'error': results[conversation_id]}), 400
 
         return '', 204
 
     except Exception as e:
-        logger.error(f"Error deleting conversations: {str(e)}")
+        logger.error(f"Error deleting conversation: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/models', methods=['GET', 'OPTIONS'])

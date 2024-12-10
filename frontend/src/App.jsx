@@ -164,13 +164,14 @@ const ChatInterface = () => {
         const response = await fetchWithTimeout(`${API_BASE_URL}/conversations/${id}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        setMessages(data.messages.map(msg => ({
-          type: 'user',
-          content: msg.user_message
-        }, {
-          type: 'bot',
-          content: msg.bot_response
-        })).flat());
+
+        // Convert the messages array to the correct format
+        const formattedMessages = data.messages.flatMap(msg => [
+          { type: 'user', content: msg.user_message },
+          { type: 'bot', content: msg.bot_response }
+        ]);
+
+        setMessages(formattedMessages);
         // Update the page title to show the conversation title
         document.title = data.title;
       } catch (error) {
@@ -269,9 +270,19 @@ const ChatInterface = () => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
 
+    const defaultHeaders = {
+      'Content-Type': 'application/json',
+      // Add CORS headers
+      'Accept': 'application/json'
+    };
+
     try {
       const response = await fetch(url, {
         ...options,
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
         signal: controller.signal,
       });
       clearTimeout(id);
@@ -281,6 +292,7 @@ const ChatInterface = () => {
       throw error;
     }
   };
+
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -305,13 +317,26 @@ const ChatInterface = () => {
     try {
       const deletePromises = Array.from(selectedConversations).map(id =>
         fetchWithTimeout(`${API_BASE_URL}/conversations/${id}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
         })
       );
 
-      await Promise.all(deletePromises);
+      const results = await Promise.allSettled(deletePromises);
 
-      // Update conversations list
+      // Check if any deletions failed
+      const errors = results
+        .filter(result => result.status === 'rejected')
+        .map(result => result.reason);
+
+      if (errors.length > 0) {
+        console.error('Some deletions failed:', errors);
+        setError(`Failed to delete some conversations: ${errors.join(', ')}`);
+      }
+
+      // Refresh conversations list regardless of any failures
       const response = await fetchWithTimeout(`${API_BASE_URL}/conversations`);
       if (response.ok) {
         const data = await response.json();
