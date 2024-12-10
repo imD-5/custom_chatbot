@@ -103,6 +103,7 @@ const ChatInterface = () => {
   const [error, setError] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
@@ -185,6 +186,28 @@ const ChatInterface = () => {
     }
   }, [currentConversationId]);
 
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const adjustHeight = () => {
+      textarea.style.height = 'auto';
+
+      const chatSection = textarea.closest('.flex-1.flex.flex-col.h-full');
+      const maxHeight = chatSection ? chatSection.offsetHeight * 0.4 : 300;
+
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+      textarea.style.height = `${newHeight}px`;
+    };
+
+    adjustHeight();
+
+    const handleInput = () => adjustHeight();
+    textarea.addEventListener('input', handleInput);
+
+    return () => textarea.removeEventListener('input', handleInput);
+  }, [inputValue]);
+
   // Create new conversation
   const createNewConversation = async () => {
     try {
@@ -208,9 +231,20 @@ const ChatInterface = () => {
     }
   };
 
-  // Modified handleSubmit to include conversation_id
+  const handleKeyPress = (e) => {
+    // Check for Command+Enter (Mac) or Ctrl+Enter (Windows)
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    // Only prevent default if it's a form submission
+    if (e.type === 'submit') {
+      e.preventDefault();
+    }
+
     if (!inputValue.trim()) return;
 
     const userMessage = inputValue.trim();
@@ -235,16 +269,13 @@ const ChatInterface = () => {
 
       setMessages(prev => [...prev, { type: 'bot', content: data.response }]);
 
-      // Update current conversation ID if this is a new conversation
       if (data.conversation_id && !currentConversationId) {
         setCurrentConversationId(data.conversation_id);
 
-        // Add the new code block here
         const conversationsResponse = await fetchWithTimeout(`${API_BASE_URL}/conversations`);
         if (conversationsResponse.ok) {
           const conversationsData = await conversationsResponse.json();
           setConversations(conversationsData);
-          // Update document title if this is a new conversation
           if (data.conversation_id && !currentConversationId) {
             const newConversation = conversationsData.find(c => c.id === data.conversation_id);
             if (newConversation) {
@@ -543,13 +574,15 @@ const ChatInterface = () => {
 
         <div className="p-4 border-t border-slate-700">
           <form onSubmit={handleSubmit} className="flex space-x-2">
-            <input
-              type="text"
+            <textarea
+              ref={textareaRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 p-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onKeyDown={handleKeyPress}
+              placeholder="Type your message... (⌘+Enter to send)"
+              className="flex-1 p-2 bg-slate-700 border border-slate-600 rounded-md text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto"
               disabled={isLoading}
+              style={{ minHeight: '48px' }}
             />
             <button
               type="submit"

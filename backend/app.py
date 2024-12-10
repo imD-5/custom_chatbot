@@ -129,6 +129,25 @@ Generate only the title without any additional text or punctuation."""
         with open(self.data_dir / f"{conversation_id}.json", 'w') as f:
             json.dump(data, f, indent=2)
 
+    def edit_message(self, conversation_id, message_index, new_user_message=None, new_bot_response=None):
+        """
+        Edit a specific message in a conversation by index.
+        """
+        conversation = self.get_conversation(conversation_id)
+        if not conversation:
+            raise ValueError(f"Conversation {conversation_id} not found")
+
+        if message_index < 0 or message_index >= len(conversation["messages"]):
+            raise ValueError("Invalid message index")
+
+        if new_user_message:
+            conversation["messages"][message_index]["user_message"] = new_user_message
+
+        if new_bot_response:
+            conversation["messages"][message_index]["bot_response"] = new_bot_response
+
+        self._save_conversation(conversation_id, conversation)
+
     def delete_conversations(self, conversation_ids):
         """Delete multiple conversations by their IDs
         
@@ -242,6 +261,26 @@ def get_conversation(conversation_id):
     except Exception as e:
         logger.error(f"Error getting conversation: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/conversations/<conversation_id>/messages/<int:message_index>', methods=['PUT', 'OPTIONS'])
+def edit_message(conversation_id, message_index):
+    try:
+        if request.method == 'OPTIONS':
+            return make_response('', 204)
+
+        data = request.json
+        new_user_message = data.get('user_message')
+        new_bot_response = data.get('bot_response')
+
+        chatbot.conversation_manager.edit_message(conversation_id, message_index, new_user_message, new_bot_response)
+
+        return '', 204
+    except ValueError as ve:
+        logger.error(f"Validation error: {ve}")
+        return jsonify({'error': str(ve)}), 400
+    except Exception as e:
+        logger.error(f"Error editing message: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/conversations/<conversation_id>', methods=['DELETE', 'OPTIONS'])
 def delete_conversation(conversation_id):
