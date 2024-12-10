@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight, Copy, Check } from 'lucide-react';
+import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight, Copy, Check, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import hljs from 'highlight.js';
@@ -103,23 +103,14 @@ const ChatInterface = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const messagesEndRef = useRef(null);
 
-  // Existing fetch and handle functions remain the same
-  const fetchWithTimeout = async (url, options = {}, timeout = 25000) => {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
+  // New state variables for chat history
+  const [conversations, setConversations] = useState([]);
+  const [currentConversationId, setCurrentConversationId] = useState(null);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-      clearTimeout(id);
-      return response;
-    } catch (error) {
-      clearTimeout(id);
-      throw error;
-    }
-  };
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   useEffect(() => {
     const fetchModels = async () => {
@@ -145,10 +136,77 @@ const ChatInterface = () => {
     fetchModels();
   }, []);
 
+  // Fetch conversations on component mount
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const fetchConversations = async () => {
+      setIsLoadingConversations(true);
+      try {
+        const response = await fetchWithTimeout(`${API_BASE_URL}/conversations`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        setConversations(data);
+      } catch (error) {
+        console.error('Error fetching conversations:', error);
+        setError(`Failed to fetch conversations: ${error.message}`);
+      } finally {
+        setIsLoadingConversations(false);
+      }
+    };
 
+    fetchConversations();
+  }, []);
+
+  // Load conversation messages when switching conversations
+  useEffect(() => {
+    const loadConversation = async (id) => {
+      try {
+        const response = await fetchWithTimeout(`${API_BASE_URL}/conversations/${id}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        setMessages(data.messages.map(msg => ({
+          type: 'user',
+          content: msg.user_message
+        }, {
+          type: 'bot',
+          content: msg.bot_response
+        })).flat());
+        // Update the page title to show the conversation title
+        document.title = data.title;
+      } catch (error) {
+        console.error('Error loading conversation:', error);
+        setError(`Failed to load conversation: ${error.message}`);
+      }
+    };
+
+    if (currentConversationId) {
+      loadConversation(currentConversationId);
+    }
+  }, [currentConversationId]);
+
+  // Create new conversation
+  const createNewConversation = async () => {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/conversations`, {
+        method: 'POST'
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      setCurrentConversationId(data.conversation_id);
+      setMessages([]);
+
+      // Refresh conversations list
+      const conversationsResponse = await fetchWithTimeout(`${API_BASE_URL}/conversations`);
+      if (conversationsResponse.ok) {
+        const conversationsData = await conversationsResponse.json();
+        setConversations(conversationsData);
+      }
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+      setError(`Failed to create conversation: ${error.message}`);
+    }
+  };
+
+  // Modified handleSubmit to include conversation_id
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
@@ -163,12 +221,36 @@ const ChatInterface = () => {
       const response = await fetchWithTimeout(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, model: selectedModel }),
+        body: JSON.stringify({
+          message: userMessage,
+          model: selectedModel,
+          conversation_id: currentConversationId
+        }),
       });
 
       if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
       const data = await response.json();
+
       setMessages(prev => [...prev, { type: 'bot', content: data.response }]);
+
+      // Update current conversation ID if this is a new conversation
+      if (data.conversation_id && !currentConversationId) {
+        setCurrentConversationId(data.conversation_id);
+
+        // Add the new code block here
+        const conversationsResponse = await fetchWithTimeout(`${API_BASE_URL}/conversations`);
+        if (conversationsResponse.ok) {
+          const conversationsData = await conversationsResponse.json();
+          setConversations(conversationsData);
+          // Update document title if this is a new conversation
+          if (data.conversation_id && !currentConversationId) {
+            const newConversation = conversationsData.find(c => c.id === data.conversation_id);
+            if (newConversation) {
+              document.title = newConversation.title;
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error('Chat error:', error);
       setError(`Failed to send message: ${error.message}`);
@@ -182,6 +264,32 @@ const ChatInterface = () => {
     }
   };
 
+  const fetchWithTimeout = async (url, options = {}, timeout = 25000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(id);
+      return response;
+    } catch (error) {
+      clearTimeout(id);
+      throw error;
+    }
+  };
+
+  // Format date for display
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
   return (
     <div className="fixed inset-0 w-screen h-screen bg-slate-900 flex">
       {/* Sidebar */}
@@ -193,7 +301,7 @@ const ChatInterface = () => {
               <h2 className="text-lg font-medium text-white">Menu</h2>
             </div>
 
-            <div className="flex-1 p-4 space-y-4">
+            <div className="flex-1 p-4 space-y-4 overflow-y-auto">
               <div>
                 <div className="flex items-center space-x-2 text-slate-200 mb-2">
                   <Settings size={20} />
@@ -220,14 +328,48 @@ const ChatInterface = () => {
                 </div>
               </div>
 
-              <div>
-                <div className="flex items-center space-x-2 text-slate-200 mb-2">
-                  <MessageSquare size={20} />
-                  <h3 className="font-medium">Chat History</h3>
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-slate-200 mb-2">
+                  <div className="flex items-center space-x-2">
+                    <MessageSquare size={20} />
+                    <h3 className="font-medium">Chat History</h3>
+                  </div>
+                  <button
+                    onClick={createNewConversation}
+                    className="p-1 hover:bg-slate-700 rounded-md transition-colors"
+                    title="New Chat"
+                  >
+                    <Plus size={20} />
+                  </button>
                 </div>
-                <div className="text-slate-400 text-sm">
-                  No chat history yet
-                </div>
+
+                {isLoadingConversations ? (
+                  <div className="flex items-center justify-center p-4 text-slate-400">
+                    <Loader2 className="animate-spin h-5 w-5 mr-2" />
+                    Loading...
+                  </div>
+                ) : conversations.length === 0 ? (
+                  <div className="text-slate-400 text-sm">
+                    No chat history yet
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {conversations.map((conversation) => (
+                      <button
+                        key={conversation.id}
+                        onClick={() => setCurrentConversationId(conversation.id)}
+                        className={`w-full p-2 rounded-md text-left transition-colors text-sm ${
+                          currentConversationId === conversation.id
+                            ? 'bg-blue-600 text-white'
+                            : 'text-slate-200 hover:bg-slate-700'
+                        }`}
+                      >
+                        <div className="font-medium truncate">{conversation.title}</div>
+                        <div className="text-xs opacity-75">{formatDate(conversation.created_at)}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -242,9 +384,13 @@ const ChatInterface = () => {
       </button>
 
       <div className="flex-1 flex flex-col h-full">
-        <div className="p-4 bg-slate-800 border-b border-slate-700">
-          <h1 className="text-xl font-bold text-white">Custom Chatbot</h1>
-        </div>
+      <div className="p-4 bg-slate-800 border-b border-slate-700">
+        <h1 className="text-xl font-bold text-white">
+          {currentConversationId ?
+            conversations.find(c => c.id === currentConversationId)?.title || 'Custom Chatbot'
+            : 'Custom Chatbot'}
+        </h1>
+      </div>
 
         {error && (
           <div className="p-3 bg-red-900/50 text-red-200 text-sm">
