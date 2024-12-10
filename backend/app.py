@@ -130,6 +130,39 @@ Generate only the title without any additional text or punctuation."""
         with open(self.data_dir / f"{conversation_id}.json", 'w') as f:
             json.dump(data, f, indent=2)
 
+def delete_conversations(self, conversation_ids):
+    """Delete multiple conversations by their IDs
+    
+    Args:
+        conversation_ids (list): List of conversation IDs to delete
+        
+    Returns:
+        dict: Dictionary with results for each conversation deletion attempt
+        
+    Raises:
+        ValueError: If conversation_ids is not a list
+    """
+    if not isinstance(conversation_ids, list):
+        raise ValueError("conversation_ids must be a list")
+
+    results = {}
+
+    for conversation_id in conversation_ids:
+        try:
+            conversation_file = self.data_dir / f"{conversation_id}.json"
+            if not conversation_file.exists():
+                results[conversation_id] = f"Error: Conversation not found"
+                continue
+
+            conversation_file.unlink()
+            results[conversation_id] = "Successfully deleted"
+
+        except Exception as e:
+            logger.error(f"Error deleting conversation {conversation_id}: {str(e)}")
+            results[conversation_id] = f"Error: {str(e)}"
+
+    return results
+
 class CustomChatbot:
     def __init__(self):
         self.conversation_manager = ConversationManager()
@@ -210,6 +243,27 @@ def get_conversation(conversation_id):
     except Exception as e:
         logger.error(f"Error getting conversation: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/conversations', methods=['DELETE'])
+def delete_conversations():
+    """Delete multiple conversations"""
+    try:
+        conversation_ids = request.json.get('conversation_ids', [])
+        if not conversation_ids:
+            return jsonify({'error': 'No conversation IDs provided'}), 400
+
+        results = chatbot.delete_conversations(conversation_ids)
+
+        # Check if any deletions failed
+        errors = {id: msg for id, msg in results.items() if msg.startswith("Error")}
+        if errors:
+            return jsonify({'errors': errors}), 207  # 207 Multi-Status
+
+        return '', 204
+
+    except Exception as e:
+        logger.error(f"Error deleting conversations: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/models', methods=['GET', 'OPTIONS'])
 def get_models():

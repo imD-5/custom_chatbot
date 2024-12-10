@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight, Copy, Check, Plus } from 'lucide-react';
+import { Send, Loader2, Settings, MessageSquare, ChevronLeft, ChevronRight, Copy, Check, Plus, Trash2 } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './components/ui/alert-dialog';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import hljs from 'highlight.js';
@@ -102,11 +103,11 @@ const ChatInterface = () => {
   const [error, setError] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const messagesEndRef = useRef(null);
-
-  // New state variables for chat history
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [selectedConversations, setSelectedConversations] = useState(new Set());
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -290,6 +291,48 @@ const ChatInterface = () => {
     });
   };
 
+  const handleConversationSelect = (conversationId) => {
+    const newSelected = new Set(selectedConversations);
+    if (newSelected.has(conversationId)) {
+      newSelected.delete(conversationId);
+    } else {
+      newSelected.add(conversationId);
+    }
+    setSelectedConversations(newSelected);
+  };
+
+  const handleDeleteSelected = async () => {
+    try {
+      const deletePromises = Array.from(selectedConversations).map(id =>
+        fetchWithTimeout(`${API_BASE_URL}/conversations/${id}`, {
+          method: 'DELETE'
+        })
+      );
+
+      await Promise.all(deletePromises);
+
+      // Update conversations list
+      const response = await fetchWithTimeout(`${API_BASE_URL}/conversations`);
+      if (response.ok) {
+        const data = await response.json();
+        setConversations(data);
+      }
+
+      // Clear selections
+      setSelectedConversations(new Set());
+
+      // If current conversation was deleted, clear it
+      if (selectedConversations.has(currentConversationId)) {
+        setCurrentConversationId(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Error deleting conversations:', error);
+      setError(`Failed to delete conversations: ${error.message}`);
+    }
+    setShowDeleteDialog(false);
+  };
+
   return (
     <div className="fixed inset-0 w-screen h-screen bg-slate-900 flex">
       {/* Sidebar */}
@@ -334,13 +377,27 @@ const ChatInterface = () => {
                     <MessageSquare size={20} />
                     <h3 className="font-medium">Chat History</h3>
                   </div>
-                  <button
-                    onClick={createNewConversation}
-                    className="p-1 hover:bg-slate-700 rounded-md transition-colors"
-                    title="New Chat"
-                  >
-                    <Plus size={20} />
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setShowDeleteDialog(true)}
+                      className={`p-1 rounded-md transition-colors ${
+                        selectedConversations.size > 0
+                          ? 'text-red-400 hover:bg-red-950'
+                          : 'text-slate-500 cursor-not-allowed'
+                      }`}
+                      disabled={selectedConversations.size === 0}
+                      title="Delete Selected"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                    <button
+                      onClick={createNewConversation}
+                      className="p-1 hover:bg-slate-700 rounded-md transition-colors"
+                      title="New Chat"
+                    >
+                      <Plus size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 {isLoadingConversations ? (
@@ -355,26 +412,57 @@ const ChatInterface = () => {
                 ) : (
                   <div className="space-y-2">
                     {conversations.map((conversation) => (
-                      <button
+                      <div
                         key={conversation.id}
-                        onClick={() => setCurrentConversationId(conversation.id)}
-                        className={`w-full p-2 rounded-md text-left transition-colors text-sm ${
-                          currentConversationId === conversation.id
-                            ? 'bg-blue-600 text-white'
-                            : 'text-slate-200 hover:bg-slate-700'
-                        }`}
+                        className="flex items-center space-x-2"
                       >
-                        <div className="font-medium truncate">{conversation.title}</div>
-                        <div className="text-xs opacity-75">{formatDate(conversation.created_at)}</div>
-                      </button>
+                        <input
+                          type="checkbox"
+                          checked={selectedConversations.has(conversation.id)}
+                          onChange={() => handleConversationSelect(conversation.id)}
+                          className="w-4 h-4 rounded border-slate-500"
+                        />
+                        <button
+                          onClick={() => setCurrentConversationId(conversation.id)}
+                          className={`flex-1 p-2 rounded-md text-left transition-colors text-sm ${
+                            currentConversationId === conversation.id
+                              ? 'bg-blue-600 text-white'
+                              : 'text-slate-200 hover:bg-slate-700'
+                          }`}
+                        >
+                          <div className="font-medium truncate">{conversation.title}</div>
+                          <div className="text-xs opacity-75">{formatDate(conversation.created_at)}</div>
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
+
               </div>
             </div>
           </>
         )}
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Selected Conversations</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedConversations.size} selected conversation(s)? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSelected}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <button
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
